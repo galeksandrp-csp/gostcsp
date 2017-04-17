@@ -67,3 +67,87 @@ void my_hash_gost(const BYTE *buf, int buflen, char *hash_res)
 char hash_gost[32];
 char hash_sha1[20];
 char public_key[64];
+
+BOOL WINAPI
+CPAcquireContext(
+    OUT HCRYPTPROV *phProv,
+    IN  LPCSTR szContainer,
+    IN  DWORD dwFlags,
+    IN  PVTableProvStruc pVTable)
+{
+    *phProv = 123;
+    return TRUE;
+}
+
+BOOL WINAPI
+CPHashData(
+    IN  HCRYPTPROV hProv,
+    IN  HCRYPTHASH hHash,
+    IN  CONST BYTE *pbData,
+    IN  DWORD cbDataLen,
+    IN  DWORD dwFlags)
+{
+    my_hash_gost(pbData, cbDataLen, hash_gost);
+    SHA1(pbData, cbDataLen, hash_sha1);
+    return TRUE;
+}
+
+BOOL WINAPI
+CPGetHashParam(
+    IN  HCRYPTPROV hProv,
+    IN  HCRYPTHASH hHash,
+    IN  DWORD dwParam,
+    OUT LPBYTE pbData,
+    IN OUT LPDWORD pcbDataLen,
+    IN  DWORD dwFlags)
+{
+	switch(dwParam)
+	{
+		case HP_HASHVAL:
+			if(*pcbDataLen == 20) // у нас просят отпечаток sha1
+			{
+				memcpy(pbData, hash_sha1, 20);
+				break;
+			}
+		default:
+			*pcbDataLen = 0;
+			SetLastError(E_INVALIDARG);
+			return FALSE;
+	}
+    return TRUE;
+}
+
+BOOL WINAPI
+CPVerifySignature(
+    IN  HCRYPTPROV hProv,
+    IN  HCRYPTHASH hHash,
+    IN  CONST BYTE *pbSignature,
+    IN  DWORD cbSigLen,
+    IN  HCRYPTKEY hPubKey,
+    IN  LPCWSTR szDescription,
+    IN  DWORD dwFlags)
+{
+#define NTE_IC_ERROR_PREDEF          0x89900000L
+    INT err;
+    err = my_verify_gost(hash_gost, pbSignature, public_key, public_key+32, 
+            NID_id_GostR3410_2001_CryptoPro_A_ParamSet);
+    if ( err ) 
+    {
+        SetLastError( NTE_IC_ERROR_PREDEF | err );
+        return FALSE;
+    }
+    return TRUE;
+}
+
+BOOL WINAPI xyz_ConvertPublicKeyInfo(
+  DWORD dwCertEncodingType,
+  VOID *EncodedKeyInfo,
+  DWORD dwAlg,
+  DWORD dwFlags,
+  BYTE** ppStructInfo,
+  DWORD* StructLen
+)
+{
+    memcpy(public_key, ((CERT_PUBLIC_KEY_INFO*)EncodedKeyInfo)->PublicKey.pbData + 2, 64);
+    return TRUE;
+}
